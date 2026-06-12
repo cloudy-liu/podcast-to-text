@@ -58,6 +58,11 @@ Each output directory contains:
 - `source.srt`
 - `segments.json`
 
+`metadata.json` records `source_transcript` provenance, including whether
+`source.srt` came from a platform subtitle or local ASR and whether ASR was
+used. It also records `chinese_transcript.status`; source-only CLI runs leave
+that status as `pending` and do not create a fake `transcript.zh.srt`.
+
 For YouTube videos with platform subtitles, `source.srt` is normalized from the
 selected subtitle track and ASR is skipped. Subtitle priority is manual Chinese,
 manual English, automatic Chinese, automatic English, then local ASR fallback.

@@ -14,13 +14,21 @@ YOUTUBE_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
 
 def _stub_transcriber(monkeypatch):
+    def fake_transcribe_audio(*args, **kwargs):
+        return (
+            [Segment(start=0.0, end=1.0, text="hello world")],
+            {
+                "model": "tiny",
+                "duration": 1.0,
+                "segments": 1,
+                "language": kwargs.get("language"),
+            },
+        )
+
     monkeypatch.setattr(
         cli,
         "transcribe_audio",
-        lambda *args, **kwargs: (
-            [Segment(start=0.0, end=1.0, text="hello world")],
-            {"model": "tiny", "duration": 1.0, "segments": 1},
-        ),
+        fake_transcribe_audio,
     )
 
 
@@ -168,9 +176,23 @@ def test_cli_writes_srt_but_not_txt_for_xiaoyuzhou(monkeypatch, tmp_path):
     assert cli.main() == 0
 
     episode_dir = out_dir / "Episode Title- Harness__6a15a2cb"
+    metadata = json.loads((episode_dir / "metadata.json").read_text(encoding="utf-8"))
+
     assert (episode_dir / "source.srt").is_file()
     assert not (episode_dir / "transcript.srt").exists()
     assert not (episode_dir / "transcript.txt").exists()
+    assert not (episode_dir / "transcript.zh.srt").exists()
+    assert metadata["source_transcript"] == {
+        "artifact": "source.srt",
+        "method": "local_asr",
+        "provider": "faster_whisper",
+        "asr_used": True,
+        "language": "zh",
+    }
+    assert metadata["chinese_transcript"] == {
+        "artifact": "transcript.zh.srt",
+        "status": "pending",
+    }
 
 
 def test_cli_supports_youtube_urls(monkeypatch, tmp_path):
@@ -202,9 +224,22 @@ def test_cli_uses_youtube_platform_subtitle_without_asr(monkeypatch, tmp_path):
 
     assert (video_dir / "source.srt").is_file()
     assert "Manual caption" in (video_dir / "source.srt").read_text(encoding="utf-8")
+    assert not (video_dir / "transcript.zh.srt").exists()
     assert calls["transcribe"] == 0
     assert metadata["source_type"] == "youtube"
     assert metadata["video_id"] == "dQw4w9WgXcQ"
+    assert metadata["source_transcript"] == {
+        "artifact": "source.srt",
+        "method": "platform_subtitle",
+        "provider": "youtube",
+        "asr_used": False,
+        "language": "en",
+        "subtitle_type": "manual",
+    }
+    assert metadata["chinese_transcript"] == {
+        "artifact": "transcript.zh.srt",
+        "status": "pending",
+    }
 
 
 def test_youtube_audio_fallback_uses_source_language_detection(monkeypatch, tmp_path):
@@ -245,8 +280,23 @@ def test_youtube_audio_fallback_uses_source_language_detection(monkeypatch, tmp_
 
     assert cli.main() == 0
 
+    video_dir = out_dir / "YouTube Demo- Video__dQw4w9Wg"
+    metadata = json.loads((video_dir / "metadata.json").read_text(encoding="utf-8"))
+
     assert calls == ["subtitle", "audio", ("asr", None)]
-    assert (out_dir / "YouTube Demo- Video__dQw4w9Wg" / "source.srt").is_file()
+    assert (video_dir / "source.srt").is_file()
+    assert not (video_dir / "transcript.zh.srt").exists()
+    assert metadata["source_transcript"] == {
+        "artifact": "source.srt",
+        "method": "local_asr",
+        "provider": "faster_whisper",
+        "asr_used": True,
+        "language": "en",
+    }
+    assert metadata["chinese_transcript"] == {
+        "artifact": "transcript.zh.srt",
+        "status": "pending",
+    }
 
 
 def test_xiaoyuzhou_keeps_chinese_default_language(monkeypatch, tmp_path):
