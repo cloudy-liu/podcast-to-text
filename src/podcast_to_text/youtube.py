@@ -100,11 +100,29 @@ def download_youtube_subtitle(source_url: str, output_dir: Path) -> YouTubeSubti
     with YoutubeDL(probe_options) as ydl:
         info = ydl.extract_info(source_url, download=False)
 
-    selected = _select_subtitle(info)
-    if selected is None:
-        return None
+    for language, subtitle_type in _subtitle_candidates(info):
+        try:
+            return _download_youtube_subtitle_candidate(
+                source_url=source_url,
+                output_dir=output_dir,
+                info=info,
+                language=language,
+                subtitle_type=subtitle_type,
+            )
+        except Exception:
+            continue
 
-    language, subtitle_type = selected
+    return None
+
+
+def _download_youtube_subtitle_candidate(
+    *,
+    source_url: str,
+    output_dir: Path,
+    info: dict[str, Any],
+    language: str,
+    subtitle_type: str,
+) -> YouTubeSubtitle:
     output_template = str(output_dir / "%(title).120s [%(id)s].%(ext)s")
     download_options: dict[str, Any] = {
         "skip_download": True,
@@ -151,8 +169,14 @@ def _downloaded_audio_path(info: dict[str, Any]) -> Path:
 
 
 def _select_subtitle(info: dict[str, Any]) -> tuple[str, str] | None:
+    candidates = _subtitle_candidates(info)
+    return candidates[0] if candidates else None
+
+
+def _subtitle_candidates(info: dict[str, Any]) -> list[tuple[str, str]]:
     manual_subtitles = _as_dict(info.get("subtitles"))
     automatic_subtitles = _as_dict(info.get("automatic_captions"))
+    candidates: list[tuple[str, str]] = []
 
     for captions, subtitle_type, language_family in (
         (manual_subtitles, "manual", "zh"),
@@ -160,14 +184,18 @@ def _select_subtitle(info: dict[str, Any]) -> tuple[str, str] | None:
         (automatic_subtitles, "automatic", "zh"),
         (automatic_subtitles, "automatic", "en"),
     ):
-        language = _select_language(captions, language_family)
-        if language:
-            return language, subtitle_type
+        for language in _select_languages(captions, language_family):
+            candidates.append((language, subtitle_type))
 
-    return None
+    return candidates
 
 
 def _select_language(captions: dict[str, Any], language_family: str) -> str | None:
+    languages = _select_languages(captions, language_family)
+    return languages[0] if languages else None
+
+
+def _select_languages(captions: dict[str, Any], language_family: str) -> list[str]:
     preferred = (
         _CHINESE_LANGUAGE_PRIORITY
         if language_family == "zh"
@@ -177,14 +205,19 @@ def _select_language(captions: dict[str, Any], language_family: str) -> str | No
         language for language in captions if _has_downloadable_caption(captions[language])
     ]
 
+    selected: list[str] = []
     for language in preferred:
         if language in available:
-            return language
+            selected.append(language)
 
-    matching = sorted(
-        language for language in available if _language_matches(language, language_family)
+    selected.extend(
+        language
+        for language in sorted(
+            language for language in available if _language_matches(language, language_family)
+        )
+        if language not in selected
     )
-    return matching[0] if matching else None
+    return selected
 
 
 def _has_downloadable_caption(entries: Any) -> bool:

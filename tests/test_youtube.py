@@ -129,6 +129,33 @@ def test_download_youtube_subtitle_prefers_manual_english_over_auto_chinese(
     assert calls[2][1]["subtitleslangs"] == ["en"]
 
 
+def test_download_youtube_subtitle_tries_next_candidate_after_download_failure(
+    monkeypatch, tmp_path
+):
+    info = {
+        "id": "abc123",
+        "title": "video audio",
+        "webpage_url": "https://www.youtube.com/watch?v=abc123",
+        "subtitles": {
+            "zh-Hans": [{"ext": "vtt", "url": "https://example.test/manual-zh.vtt"}],
+            "en": [{"ext": "vtt", "url": "https://example.test/manual-en.vtt"}],
+        },
+    }
+    calls = _stub_subtitle_downloader(
+        monkeypatch,
+        tmp_path,
+        info,
+        fail_languages={"zh-Hans"},
+    )
+
+    subtitle = download_youtube_subtitle("https://youtu.be/abc123", tmp_path)
+
+    assert subtitle is not None
+    assert subtitle.language == "en"
+    assert calls[2][1]["subtitleslangs"] == ["zh-Hans"]
+    assert calls[4][1]["subtitleslangs"] == ["en"]
+
+
 def test_download_youtube_subtitle_uses_auto_chinese_before_auto_english(
     monkeypatch, tmp_path
 ):
@@ -186,9 +213,13 @@ def test_download_youtube_subtitle_returns_none_when_no_supported_subtitles(
 
 
 def _stub_subtitle_downloader(
-    monkeypatch, tmp_path: Path, info: dict[str, Any]
+    monkeypatch,
+    tmp_path: Path,
+    info: dict[str, Any],
+    fail_languages: set[str] | None = None,
 ) -> list[tuple[Any, ...]]:
     calls: list[tuple[Any, ...]] = []
+    fail_languages = fail_languages or set()
 
     class FakeYoutubeDL:
         def __init__(self, options):
@@ -207,6 +238,9 @@ def _stub_subtitle_downloader(
                 return info
 
             language = self.options["subtitleslangs"][0]
+            if language in fail_languages:
+                raise RuntimeError(f"download failed for {language}")
+
             subtitle_path = tmp_path / f"video audio [abc123].{language}.vtt"
             subtitle_path.write_text(
                 "WEBVTT\n\n00:00:00.000 --> 00:00:01.250\nManual caption\n",
