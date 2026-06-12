@@ -120,6 +120,8 @@ def main() -> int:
     )
     metadata["transcription"] = transcribe_metadata
     metadata["audio_path"] = str(prepared.audio_path)
+    metadata["source_transcript"] = _local_asr_source_transcript(transcribe_metadata)
+    metadata["chinese_transcript"] = _pending_chinese_transcript()
 
     (episode_dir / "metadata.json").write_text(
         json.dumps(metadata, ensure_ascii=False, indent=2),
@@ -164,6 +166,23 @@ def _transcription_language(args: argparse.Namespace, metadata: dict[str, object
         return "zh"
 
     return None
+
+
+def _local_asr_source_transcript(transcribe_metadata: dict[str, object]) -> dict[str, object]:
+    return {
+        "artifact": "source.srt",
+        "method": "local_asr",
+        "provider": "faster_whisper",
+        "asr_used": True,
+        "language": transcribe_metadata.get("language"),
+    }
+
+
+def _pending_chinese_transcript() -> dict[str, object]:
+    return {
+        "artifact": "transcript.zh.srt",
+        "status": "pending",
+    }
 
 
 def _prepare_xiaoyuzhou_input(args: argparse.Namespace) -> PreparedInput:
@@ -275,12 +294,15 @@ def _youtube_subtitle_metadata(
         "uploader": subtitle.uploader,
         "limit_seconds": args.limit_seconds,
         "initial_prompt": args.initial_prompt,
-        "source_artifact": {
-            "kind": "youtube_platform_subtitle",
+        "source_transcript": {
+            "artifact": "source.srt",
+            "method": "platform_subtitle",
+            "provider": "youtube",
+            "asr_used": False,
             "language": subtitle.language,
             "subtitle_type": subtitle.subtitle_type,
-            "path": "source.srt",
         },
+        "chinese_transcript": _pending_chinese_transcript(),
     }
 
 
