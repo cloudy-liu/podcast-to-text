@@ -136,7 +136,8 @@ def test_cli_writes_srt_but_not_txt_for_xiaoyuzhou(monkeypatch, tmp_path):
     assert cli.main() == 0
 
     episode_dir = out_dir / "Episode Title- Harness__6a15a2cb"
-    assert (episode_dir / "transcript.srt").is_file()
+    assert (episode_dir / "source.srt").is_file()
+    assert not (episode_dir / "transcript.srt").exists()
     assert not (episode_dir / "transcript.txt").exists()
 
 
@@ -150,8 +151,9 @@ def test_cli_supports_youtube_urls(monkeypatch, tmp_path):
     metadata = json.loads((video_dir / "metadata.json").read_text(encoding="utf-8"))
 
     assert video_dir.is_dir()
-    assert (video_dir / "transcript.srt").is_file()
+    assert (video_dir / "source.srt").is_file()
     assert (video_dir / "segments.json").is_file()
+    assert not (video_dir / "transcript.srt").exists()
     assert not (video_dir / "transcript.txt").exists()
     assert metadata["source_type"] == "youtube"
     assert metadata["video_id"] == "dQw4w9WgXcQ"
