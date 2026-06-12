@@ -58,9 +58,16 @@ def main() -> int:
         json.dumps(segments_to_jsonable(segments), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    (episode_dir / "transcript.srt").write_text(render_srt(segments), encoding="utf-8")
+    source_srt_path = episode_dir / "source.srt"
+    source_srt_path.write_text(render_srt(segments), encoding="utf-8")
 
-    print(json.dumps({"output_dir": str(episode_dir), **metadata}, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {"output_dir": str(episode_dir), "source_srt_path": str(source_srt_path), **metadata},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 

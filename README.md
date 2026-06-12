@@ -54,7 +54,7 @@ Each output directory contains:
 
 - `metadata.json`
 - `audio_sample.wav` or the downloaded original audio
-- `transcript.srt`
+- `source.srt`
 - `segments.json`
 
 ## Xiaoyuzhou Transcript Hints
