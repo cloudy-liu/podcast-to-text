@@ -220,7 +220,11 @@ def _prepare_youtube_input(args: argparse.Namespace) -> PreparedInput:
     staging_dir = args.out_dir / ".youtube-downloads"
     staging_dir.mkdir(parents=True, exist_ok=True)
 
-    subtitle = download_youtube_subtitle(args.url, staging_dir)
+    try:
+        subtitle = download_youtube_subtitle(args.url, staging_dir)
+    except Exception:
+        subtitle = None
+
     if subtitle is not None:
         video_dir = args.out_dir / episode_directory_name(
             title=subtitle.title,

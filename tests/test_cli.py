@@ -299,6 +299,55 @@ def test_youtube_audio_fallback_uses_source_language_detection(monkeypatch, tmp_
     }
 
 
+def test_youtube_audio_fallback_runs_when_subtitle_acquisition_fails(
+    monkeypatch, tmp_path
+):
+    out_dir = _run_cli(monkeypatch, tmp_path, url=YOUTUBE_URL)
+    calls = []
+
+    def fake_download_youtube_subtitle(source_url: str, output_dir: Path):
+        calls.append("subtitle")
+        raise RuntimeError("subtitle download failed")
+
+    def fake_download_youtube_audio(source_url: str, output_dir: Path) -> YouTubeVideo:
+        calls.append("audio")
+        audio_path = output_dir / "youtube-audio.m4a"
+        audio_path.write_bytes(b"audio")
+        return YouTubeVideo(
+            video_id="dQw4w9WgXcQ",
+            title="YouTube Demo: Video",
+            source_url=source_url,
+            webpage_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            audio_path=audio_path,
+        )
+
+    def fake_transcribe_audio(audio_path: Path, **kwargs):
+        calls.append(("asr", kwargs["language"]))
+        return (
+            [Segment(start=0.0, end=1.0, text="hello world")],
+            {"model": "tiny", "duration": 1.0, "segments": 1, "language": "en"},
+        )
+
+    monkeypatch.setattr(cli, "download_youtube_subtitle", fake_download_youtube_subtitle)
+    monkeypatch.setattr(cli, "download_youtube_audio", fake_download_youtube_audio)
+    monkeypatch.setattr(cli, "transcribe_audio", fake_transcribe_audio)
+    monkeypatch.setattr(
+        cli,
+        "extract_audio_sample",
+        lambda audio_url, output_path, seconds: Path(output_path).write_bytes(b"wav"),
+    )
+
+    assert cli.main() == 0
+
+    video_dir = out_dir / "YouTube Demo- Video__dQw4w9Wg"
+    metadata = json.loads((video_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    assert calls == ["subtitle", "audio", ("asr", None)]
+    assert (video_dir / "source.srt").is_file()
+    assert metadata["source_transcript"]["method"] == "local_asr"
+    assert metadata["source_transcript"]["asr_used"] is True
+
+
 def test_xiaoyuzhou_keeps_chinese_default_language(monkeypatch, tmp_path):
     _run_cli(monkeypatch, tmp_path)
     _stub_xiaoyuzhou(monkeypatch)
