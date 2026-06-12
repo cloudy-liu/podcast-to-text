@@ -1,0 +1,4 @@
+interface:
+  display_name: "Chinese SRT Adaptation"
+  short_description: "Adapt source SRT into Chinese while preserving cue timing."
+  default_prompt: "Convert source.srt to transcript.zh.srt and validate cue alignment."

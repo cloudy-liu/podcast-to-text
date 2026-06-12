@@ -70,6 +70,14 @@ When YouTube falls back to local ASR, the default `--language auto` lets Whisper
 detect the spoken source language. Xiaoyuzhou keeps a Chinese ASR default unless
 you pass an explicit language code.
 
+## Chinese Adaptation
+
+The CLI stops at `source.srt`. To create the final Chinese artifact, use the
+project skill in `skills/chinese-srt-adaptation/` with Codex or Claude Code. The
+skill transforms `source.srt` into `transcript.zh.srt`, preserves cue timing, and
+runs its bundled SRT alignment validator. The CLI does not contain an LLM API
+client, API key, base URL, or model provider configuration.
+
 ## Xiaoyuzhou Transcript Hints
 
 Some Xiaoyuzhou episode pages expose transcript metadata such as
