@@ -12,8 +12,9 @@ Local Xiaoyuzhou and YouTube transcription with `faster-whisper`.
   --model small --device cpu --compute-type int8 --limit-seconds 45 --out-dir out-small
 ```
 
-YouTube links use `yt-dlp` to download the audio, then run through the same
-local ASR path:
+YouTube links use `yt-dlp` to fetch platform subtitles first. If no supported
+Chinese or English subtitle is available, the CLI downloads audio and runs the
+same local ASR path:
 
 ```powershell
 .\.venv\Scripts\python.exe -m podcast_to_text.cli `
@@ -56,6 +57,10 @@ Each output directory contains:
 - `audio_sample.wav` or the downloaded original audio
 - `source.srt`
 - `segments.json`
+
+For YouTube videos with platform subtitles, `source.srt` is normalized from the
+selected subtitle track and ASR is skipped. Subtitle priority is manual Chinese,
+manual English, automatic Chinese, automatic English, then local ASR fallback.
 
 ## Xiaoyuzhou Transcript Hints
 

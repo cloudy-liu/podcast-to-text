@@ -6,7 +6,7 @@ from pathlib import Path
 from podcast_to_text import cli
 from podcast_to_text.outputs import Segment
 from podcast_to_text.xiaoyuzhou import XiaoyuzhouEpisode, XiaoyuzhouTranscriptHint
-from podcast_to_text.youtube import YouTubeVideo
+from podcast_to_text.youtube import YouTubeSubtitle, YouTubeVideo
 
 
 XIAOYUZHOU_URL = "https://www.xiaoyuzhoufm.com/episode/6a15a2cbff7b9a8c0a5b953f"
@@ -72,6 +72,8 @@ def _stub_xiaoyuzhou(monkeypatch):
 
 
 def _stub_youtube(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(cli, "download_youtube_subtitle", lambda source_url, output_dir: None)
+
     def fake_download_youtube_audio(source_url: str, output_dir: Path) -> YouTubeVideo:
         audio_path = output_dir / "youtube-audio.m4a"
         audio_path.write_bytes(b"audio")
@@ -91,6 +93,36 @@ def _stub_youtube(monkeypatch, tmp_path: Path):
         "extract_audio_sample",
         lambda audio_url, output_path, seconds: Path(output_path).write_bytes(b"wav"),
     )
+
+
+def _stub_youtube_subtitle(monkeypatch, tmp_path: Path):
+    calls = {"transcribe": 0}
+
+    def fail_transcribe(*args, **kwargs):
+        calls["transcribe"] += 1
+        raise AssertionError("ASR should not run when YouTube platform subtitles are available")
+
+    def fake_download_youtube_subtitle(source_url: str, output_dir: Path) -> YouTubeSubtitle:
+        subtitle_path = output_dir / "platform.en.vtt"
+        subtitle_path.write_text(
+            "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nManual caption\n",
+            encoding="utf-8",
+        )
+        return YouTubeSubtitle(
+            video_id="dQw4w9WgXcQ",
+            title="YouTube Demo: Video",
+            source_url=source_url,
+            webpage_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            subtitle_path=subtitle_path,
+            language="en",
+            subtitle_type="manual",
+            duration=12.5,
+            uploader="Example Channel",
+        )
+
+    monkeypatch.setattr(cli, "download_youtube_subtitle", fake_download_youtube_subtitle)
+    monkeypatch.setattr(cli, "transcribe_audio", fail_transcribe)
+    return calls
 
 
 def test_cli_uses_readable_title_id_directory_by_default(monkeypatch, tmp_path):
@@ -155,5 +187,21 @@ def test_cli_supports_youtube_urls(monkeypatch, tmp_path):
     assert (video_dir / "segments.json").is_file()
     assert not (video_dir / "transcript.srt").exists()
     assert not (video_dir / "transcript.txt").exists()
+    assert metadata["source_type"] == "youtube"
+    assert metadata["video_id"] == "dQw4w9WgXcQ"
+
+
+def test_cli_uses_youtube_platform_subtitle_without_asr(monkeypatch, tmp_path):
+    out_dir = _run_cli(monkeypatch, tmp_path, url=YOUTUBE_URL)
+    calls = _stub_youtube_subtitle(monkeypatch, tmp_path)
+
+    assert cli.main() == 0
+
+    video_dir = out_dir / "YouTube Demo- Video__dQw4w9Wg"
+    metadata = json.loads((video_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    assert (video_dir / "source.srt").is_file()
+    assert "Manual caption" in (video_dir / "source.srt").read_text(encoding="utf-8")
+    assert calls["transcribe"] == 0
     assert metadata["source_type"] == "youtube"
     assert metadata["video_id"] == "dQw4w9WgXcQ"
