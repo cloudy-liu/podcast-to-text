@@ -50,7 +50,14 @@ def main() -> int:
         default="int8",
         help="int8, float16, float32, or default",
     )
-    parser.add_argument("--language", default="zh")
+    parser.add_argument(
+        "--language",
+        default="auto",
+        help=(
+            "ASR language code. Use auto to keep Xiaoyuzhou on zh and let "
+            "YouTube audio fallback detect the source language."
+        ),
+    )
     parser.add_argument("--beam-size", default=5, type=int)
     parser.add_argument("--vad-filter", action="store_true")
     parser.add_argument(
@@ -106,7 +113,7 @@ def main() -> int:
         model_name=args.model,
         device=args.device,
         compute_type=args.compute_type,
-        language=args.language,
+        language=_transcription_language(args, metadata),
         beam_size=args.beam_size,
         vad_filter=args.vad_filter,
         initial_prompt=args.initial_prompt,
@@ -147,6 +154,16 @@ def _prepare_input(args: argparse.Namespace) -> PreparedInput:
         return _prepare_youtube_input(args)
 
     raise SystemExit("Only Xiaoyuzhou episode URLs and YouTube URLs are supported.")
+
+
+def _transcription_language(args: argparse.Namespace, metadata: dict[str, object]) -> str | None:
+    if args.language not in {None, "", "auto"}:
+        return args.language
+
+    if metadata.get("source_type") == "xiaoyuzhou":
+        return "zh"
+
+    return None
 
 
 def _prepare_xiaoyuzhou_input(args: argparse.Namespace) -> PreparedInput:

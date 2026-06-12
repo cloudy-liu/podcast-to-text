@@ -61,6 +61,9 @@ Each output directory contains:
 For YouTube videos with platform subtitles, `source.srt` is normalized from the
 selected subtitle track and ASR is skipped. Subtitle priority is manual Chinese,
 manual English, automatic Chinese, automatic English, then local ASR fallback.
+When YouTube falls back to local ASR, the default `--language auto` lets Whisper
+detect the spoken source language. Xiaoyuzhou keeps a Chinese ASR default unless
+you pass an explicit language code.
 
 ## Xiaoyuzhou Transcript Hints
 

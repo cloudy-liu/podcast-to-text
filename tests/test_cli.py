@@ -205,3 +205,106 @@ def test_cli_uses_youtube_platform_subtitle_without_asr(monkeypatch, tmp_path):
     assert calls["transcribe"] == 0
     assert metadata["source_type"] == "youtube"
     assert metadata["video_id"] == "dQw4w9WgXcQ"
+
+
+def test_youtube_audio_fallback_uses_source_language_detection(monkeypatch, tmp_path):
+    out_dir = _run_cli(monkeypatch, tmp_path, url=YOUTUBE_URL)
+    calls = []
+
+    def fake_download_youtube_subtitle(source_url: str, output_dir: Path):
+        calls.append("subtitle")
+        return None
+
+    def fake_download_youtube_audio(source_url: str, output_dir: Path) -> YouTubeVideo:
+        calls.append("audio")
+        audio_path = output_dir / "youtube-audio.m4a"
+        audio_path.write_bytes(b"audio")
+        return YouTubeVideo(
+            video_id="dQw4w9WgXcQ",
+            title="YouTube Demo: Video",
+            source_url=source_url,
+            webpage_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            audio_path=audio_path,
+        )
+
+    def fake_transcribe_audio(audio_path: Path, **kwargs):
+        calls.append(("asr", kwargs["language"]))
+        return (
+            [Segment(start=0.0, end=1.0, text="hello world")],
+            {"model": "tiny", "duration": 1.0, "segments": 1, "language": "en"},
+        )
+
+    monkeypatch.setattr(cli, "download_youtube_subtitle", fake_download_youtube_subtitle)
+    monkeypatch.setattr(cli, "download_youtube_audio", fake_download_youtube_audio)
+    monkeypatch.setattr(cli, "transcribe_audio", fake_transcribe_audio)
+    monkeypatch.setattr(
+        cli,
+        "extract_audio_sample",
+        lambda audio_url, output_path, seconds: Path(output_path).write_bytes(b"wav"),
+    )
+
+    assert cli.main() == 0
+
+    assert calls == ["subtitle", "audio", ("asr", None)]
+    assert (out_dir / "YouTube Demo- Video__dQw4w9Wg" / "source.srt").is_file()
+
+
+def test_xiaoyuzhou_keeps_chinese_default_language(monkeypatch, tmp_path):
+    _run_cli(monkeypatch, tmp_path)
+    _stub_xiaoyuzhou(monkeypatch)
+    languages = []
+
+    def fake_transcribe_audio(audio_path: Path, **kwargs):
+        languages.append(kwargs["language"])
+        return (
+            [Segment(start=0.0, end=1.0, text="hello world")],
+            {"model": "tiny", "duration": 1.0, "segments": 1, "language": "zh"},
+        )
+
+    monkeypatch.setattr(cli, "transcribe_audio", fake_transcribe_audio)
+
+    assert cli.main() == 0
+
+    assert languages == ["zh"]
+
+
+def test_explicit_youtube_asr_language_and_controls_are_preserved(monkeypatch, tmp_path):
+    _run_cli(
+        monkeypatch,
+        tmp_path,
+        url=YOUTUBE_URL,
+        extra_args=[
+            "--language",
+            "en",
+            "--model",
+            "small",
+            "--device",
+            "cpu",
+            "--compute-type",
+            "float32",
+            "--beam-size",
+            "1",
+            "--initial-prompt",
+            "domain terms",
+        ],
+    )
+    _stub_youtube(monkeypatch, tmp_path)
+    captured = {}
+
+    def fake_transcribe_audio(audio_path: Path, **kwargs):
+        captured.update(kwargs)
+        return (
+            [Segment(start=0.0, end=1.0, text="hello world")],
+            {"model": "small", "duration": 1.0, "segments": 1, "language": "en"},
+        )
+
+    monkeypatch.setattr(cli, "transcribe_audio", fake_transcribe_audio)
+
+    assert cli.main() == 0
+
+    assert captured["language"] == "en"
+    assert captured["model_name"] == "small"
+    assert captured["device"] == "cpu"
+    assert captured["compute_type"] == "float32"
+    assert captured["beam_size"] == 1
+    assert captured["initial_prompt"] == "domain terms"
