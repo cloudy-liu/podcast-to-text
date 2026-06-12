@@ -1,0 +1,33 @@
+﻿# Python environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Packaging/build artifacts
+build/
+dist/
+*.egg-info/
+
+# Local model/cache directories
+.hf-cache/
+.cache/
+
+# Generated transcription outputs and run logs
+output/
+out*/
+logs/
+runs/
+
+# Large local media/transcript artifacts
+*.m4a
+*.mp3
+*.mp4
+*.wav
+*.webm
+
+# Local secrets/config
+.env
+.env.*
