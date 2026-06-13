@@ -1,5 +1,7 @@
 # Podcast To Text
 
+[English](README.md) | [中文](README.zh-CN.md)
+
 `podcast-to-text` is a local command-line tool that turns a Xiaoyuzhou episode
 link or YouTube video link into timestamped subtitle files.
 
