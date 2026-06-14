@@ -14,6 +14,37 @@ This tool solves that problem: generate local subtitle files for any Xiaoyuzhou 
 
 ## Quick Start
 
+Requirements:
+
+- Python 3.10 or higher
+- Network access for Xiaoyuzhou pages/audio and YouTube subtitles/audio
+- `ffmpeg` if you use `--limit-seconds`
+
+Create and activate a virtual environment:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# .venv\Scripts\activate   # Windows
+```
+
+Install the project:
+
+```bash
+pip install -r requirements.txt
+pip install -e .
+```
+
+On Windows PowerShell, use:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -U pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -e .
+```
+
+Run a Xiaoyuzhou smoke test:
+
 ```bash
 python -m podcast_to_text.cli \
   "https://www.xiaoyuzhoufm.com/episode/69b4d2f9f8b8079bfa3ae7f2" \
@@ -79,35 +110,6 @@ Each output directory contains (depending on the processing path):
 - `transcript.srt` - SRT subtitle file generated from ASR path
 - `audio_sample.wav` - test audio generated when using `--limit-seconds` in ASR path
 - `audio.<ext>` - full downloaded original audio when not using `--limit-seconds` in ASR path
-
-## Environment Requirements
-
-- Python 3.10 or higher
-- Access to Xiaoyuzhou web pages, audio files, and YouTube video audio
-- `ffmpeg` required when using `--limit-seconds`
-- Runs on CPU, recommend `--compute-type int8`
-- For CUDA usage, local CUDA environment must be available
-
-## Installation
-
-In the project root directory:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# .venv\Scripts\activate   # Windows
-
-pip install -r requirements.txt
-pip install -e .
-```
-
-Or install with development dependencies (Windows):
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -U pip
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-```
 
 ## CLI Parameters
 

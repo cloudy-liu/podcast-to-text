@@ -14,6 +14,37 @@
 
 ## 快速开始
 
+环境要求：
+
+- Python 3.10 或更高版本
+- 能访问小宇宙网页/音频和 YouTube 字幕/音频
+- 使用 `--limit-seconds` 时需要 `ffmpeg`
+
+创建并激活虚拟环境：
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# .venv\Scripts\activate   # Windows
+```
+
+安装依赖和本项目：
+
+```bash
+pip install -r requirements.txt
+pip install -e .
+```
+
+Windows PowerShell 可以使用：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -U pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -e .
+```
+
+快速试跑一条小宇宙链接：
+
 ```bash
 python -m podcast_to_text.cli \
   "https://www.xiaoyuzhoufm.com/episode/69b4d2f9f8b8079bfa3ae7f2" \
@@ -79,35 +110,6 @@ output/OpenClaw 之后，我只想未来 3-6 个月的事情｜对谈 Sheet0 创
 - `transcript.srt` - ASR 路径生成的 SRT 字幕文件
 - `audio_sample.wav` - ASR 路径使用 `--limit-seconds` 时生成的测试音频
 - `audio.<ext>` - ASR 路径未使用 `--limit-seconds` 时下载的完整原始音频
-
-## 环境要求
-
-- Python 3.10 或更高版本
-- 能访问小宇宙网页、音频文件、YouTube 视频音频
-- 使用 `--limit-seconds` 时需要 `ffmpeg`
-- CPU 可运行，推荐 `--compute-type int8`
-- 如果使用 CUDA，需要本机 CUDA 环境可用
-
-## 安装
-
-在项目根目录执行：
-
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# .venv\Scripts\activate   # Windows
-
-pip install -r requirements.txt
-pip install -e .
-```
-
-或者安装开发依赖（Windows）：
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -U pip
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-```
 
 ## 命令参数
 
