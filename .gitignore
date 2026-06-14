@@ -1,4 +1,4 @@
-﻿# Python environments and caches
+# Python environments and caches
 .venv/
 __pycache__/
 *.py[cod]
@@ -20,7 +20,11 @@ output/
 out*/
 logs/
 runs/
-.youtube-downloads/
+
+# Local agent context and generated planning notes
+CONTEXT.md
+docs/usage.md
+docs/adr/
 
 # Large local media/transcript artifacts
 *.m4a
@@ -28,17 +32,6 @@ runs/
 *.mp4
 *.wav
 *.webm
-*.vtt
-source.srt
-transcript.srt
-transcript.txt
-transcript.zh.srt
-
-# Local decision notes and private project context
-CONTEXT.md
-docs/adr/
-docs/superpowers/
-docs/usage.md
 
 # Local secrets/config
 .env

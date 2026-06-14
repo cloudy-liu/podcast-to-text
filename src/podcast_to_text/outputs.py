@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from html import unescape
-import re
 
 
 @dataclass(frozen=True)
@@ -26,6 +24,50 @@ def render_srt(segments: list[Segment]) -> str:
     return "\n".join(blocks) + ("\n" if blocks else "")
 
 
+def render_vtt_as_srt(vtt_text: str) -> str:
+    lines = vtt_text.replace("\ufeff", "").splitlines()
+    blocks: list[str] = []
+    index = 1
+    cursor = 0
+
+    while cursor < len(lines):
+        line = lines[cursor].strip()
+        if not line or line.startswith("WEBVTT"):
+            cursor += 1
+            continue
+
+        if line.startswith(("NOTE", "STYLE", "REGION")):
+            cursor = _skip_vtt_block(lines, cursor + 1)
+            continue
+
+        if "-->" in line:
+            timing = line
+            cursor += 1
+        else:
+            cursor += 1
+            if cursor >= len(lines) or "-->" not in lines[cursor]:
+                continue
+            timing = lines[cursor].strip()
+            cursor += 1
+
+        start, end = _parse_vtt_timing(timing)
+        text_lines: list[str] = []
+        while cursor < len(lines) and lines[cursor].strip():
+            text_lines.append(lines[cursor].strip())
+            cursor += 1
+
+        text = "\n".join(text_lines).strip()
+        if text:
+            blocks.append(
+                f"{index}\n"
+                f"{_format_vtt_timestamp(start)} --> {_format_vtt_timestamp(end)}\n"
+                f"{text}\n"
+            )
+            index += 1
+
+    return "\n".join(blocks) + ("\n" if blocks else "")
+
+
 def format_srt_timestamp(seconds: float) -> str:
     milliseconds = round(seconds * 1000)
     hours, remainder = divmod(milliseconds, 3_600_000)
@@ -34,97 +76,17 @@ def format_srt_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-def normalize_subtitle_to_srt(text: str) -> str:
-    segments = parse_subtitle_segments(text)
-    if segments:
-        return render_srt(segments)
-
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    return normalized if normalized.endswith("\n") else normalized + "\n"
+def _skip_vtt_block(lines: list[str], cursor: int) -> int:
+    while cursor < len(lines) and lines[cursor].strip():
+        cursor += 1
+    return cursor
 
 
-def parse_subtitle_segments(text: str) -> list[Segment]:
-    lines = text.replace("\ufeff", "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    index = _skip_vtt_header(lines)
-    segments: list[Segment] = []
-
-    while index < len(lines):
-        line = lines[index].strip()
-        if not line:
-            index += 1
-            continue
-
-        if _is_vtt_metadata_block(line):
-            index = _skip_until_blank(lines, index + 1)
-            continue
-
-        timestamp_line = line
-        if "-->" not in timestamp_line:
-            index += 1
-            if index >= len(lines):
-                break
-            timestamp_line = lines[index].strip()
-
-        timestamp_match = _TIMESTAMP_LINE_RE.match(timestamp_line)
-        if not timestamp_match:
-            index += 1
-            continue
-
-        start = _parse_subtitle_timestamp(timestamp_match.group("start"))
-        end = _parse_subtitle_timestamp(timestamp_match.group("end"))
-        index += 1
-
-        text_lines: list[str] = []
-        while index < len(lines) and lines[index].strip():
-            cleaned = _clean_subtitle_text(lines[index].strip())
-            if cleaned:
-                text_lines.append(cleaned)
-            index += 1
-
-        cue_text = "\n".join(text_lines).strip()
-        if cue_text:
-            segments.append(Segment(start=start, end=end, text=cue_text))
-
-    return segments
+def _parse_vtt_timing(timing: str) -> tuple[str, str]:
+    start, rest = timing.split("-->", maxsplit=1)
+    end = rest.strip().split()[0]
+    return start.strip(), end.strip()
 
 
-_TIMESTAMP_LINE_RE = re.compile(
-    r"^(?P<start>(?:\d{1,2}:)?\d{2}:\d{2}[\.,]\d{3})\s+-->\s+"
-    r"(?P<end>(?:\d{1,2}:)?\d{2}:\d{2}[\.,]\d{3})(?:\s+.*)?$"
-)
-_TAG_RE = re.compile(r"<[^>]+>")
-
-
-def _skip_vtt_header(lines: list[str]) -> int:
-    if not lines or not lines[0].lstrip().startswith("WEBVTT"):
-        return 0
-
-    index = 1
-    while index < len(lines) and lines[index].strip():
-        index += 1
-    return index + 1
-
-
-def _is_vtt_metadata_block(line: str) -> bool:
-    return line == "STYLE" or line == "REGION" or line.startswith("NOTE")
-
-
-def _skip_until_blank(lines: list[str], index: int) -> int:
-    while index < len(lines) and lines[index].strip():
-        index += 1
-    return index
-
-
-def _parse_subtitle_timestamp(value: str) -> float:
-    timestamp, milliseconds = value.replace(",", ".").split(".")
-    parts = [int(part) for part in timestamp.split(":")]
-    if len(parts) == 2:
-        hours = 0
-        minutes, seconds = parts
-    else:
-        hours, minutes, seconds = parts
-    return hours * 3600 + minutes * 60 + seconds + int(milliseconds) / 1000
-
-
-def _clean_subtitle_text(text: str) -> str:
-    return unescape(_TAG_RE.sub("", text)).strip()
+def _format_vtt_timestamp(timestamp: str) -> str:
+    return timestamp.replace(".", ",", 1)

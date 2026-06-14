@@ -1,220 +1,198 @@
 # Podcast To Text
 
-[English](README.md) | [中文](README.zh-CN.md)
+[中文](README-zh.md)
 
-`podcast-to-text` is a local command-line tool that turns a Xiaoyuzhou episode
-link or YouTube video link into timestamped subtitle files.
+Local Xiaoyuzhou podcast transcription and YouTube subtitle extraction using `faster-whisper`.
 
-It is designed for reviewable transcript workflows:
+## Why This Project
 
-- Accept one Xiaoyuzhou episode URL or YouTube URL.
-- Produce `source.srt`, a source-language subtitle artifact.
-- Prefer existing YouTube platform subtitles before doing speech recognition.
-- Fall back to local `faster-whisper` ASR when no usable platform subtitle exists.
-- Record transcript provenance in `metadata.json`.
-- Use the bundled agent skill to create `transcript.zh.srt` when a Chinese final
-  subtitle artifact is needed.
+Podcasts are now one of the primary ways I consume information. The content is fresh and helps me absorb new knowledge quickly, but there's a pain point: after listening, it's hard to quickly review key moments without a text version for secondary review.
 
-The CLI does not include an LLM API client. Chinese translation or light
-correction is handled by an agent runtime such as Codex or Claude Code using the
-project skill in `skills/chinese-srt-adaptation/`.
+I mainly use Xiaoyuzhou and YouTube, but Xiaoyuzhou only has real-time transcription in the App with no offline option, and YouTube is the same.
+
+This tool solves that problem: generate local subtitle files for any Xiaoyuzhou episode or YouTube video, making it easy to search, quote, and archive.
 
 ## Quick Start
 
-### 1. Prepare the Environment
-
-Requirements:
-
-- Python 3.10 or newer.
-- Network access for Xiaoyuzhou/YouTube downloads.
-- `ffmpeg` if you use `--limit-seconds` to create short audio samples.
-
-Create a virtual environment:
-
-```powershell
-python -m venv .venv
+```bash
+python -m podcast_to_text.cli \
+  "https://www.xiaoyuzhoufm.com/episode/69b4d2f9f8b8079bfa3ae7f2" \
+  --model small --device cpu --compute-type int8 --limit-seconds 45
 ```
 
-Activate it on Windows PowerShell:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-Activate it on macOS or Linux:
+YouTube links work with the same entry point:
 
 ```bash
-source .venv/bin/activate
+python -m podcast_to_text.cli \
+  "https://www.youtube.com/watch?v=jNQXAC9IVRw" \
+  --model small --device cpu --compute-type int8 --limit-seconds 45
 ```
 
-Then install the project:
+For Chinese podcast transcription, use the `large-v3` model with terminology hints:
 
-```powershell
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -m pip install -e .
-```
-
-### 2. Transcribe a YouTube Video
-
-```powershell
-python -m podcast_to_text.cli `
-  "https://www.youtube.com/watch?v=jNQXAC9IVRw" `
-  --out-dir out-youtube `
-  --model small `
-  --device cpu `
-  --compute-type int8
-```
-
-YouTube runs use platform subtitles first. If no supported subtitle can be
-downloaded, the CLI downloads audio and runs local ASR.
-
-### 3. Transcribe a Xiaoyuzhou Episode
-
-```powershell
-python -m podcast_to_text.cli `
-  "https://www.xiaoyuzhoufm.com/episode/69b4d2f9f8b8079bfa3ae7f2" `
-  --out-dir out-xiaoyuzhou `
-  --model small `
-  --device cpu `
-  --compute-type int8
-```
-
-For a quick smoke test, limit the run to the first 45 seconds:
-
-```powershell
-python -m podcast_to_text.cli `
-  "https://www.xiaoyuzhoufm.com/episode/69b4d2f9f8b8079bfa3ae7f2" `
-  --out-dir out-sample `
-  --model small `
-  --device cpu `
-  --compute-type int8 `
+```bash
+python -m podcast_to_text.cli \
+  "https://www.xiaoyuzhoufm.com/episode/69b4d2f9f8b8079bfa3ae7f2" \
+  --model large-v3 --device cpu --compute-type int8 --beam-size 1 \
+  --initial-prompt "世界零 Sheet0 创始人王文锋 曲凯 AI Agent Manus" \
   --limit-seconds 45
 ```
 
-### 4. Create the Chinese Subtitle Artifact
+## Parameter Guide
 
-The CLI stops at `source.srt`. To create `transcript.zh.srt`, use the bundled
-skill with Codex or Claude Code:
+The CLI defaults are:
 
 ```text
-Use skills/chinese-srt-adaptation to convert <output-dir>/source.srt to
-<output-dir>/transcript.zh.srt, then run the alignment validator.
+--model medium --device cpu --compute-type int8 --language zh --beam-size 5
 ```
 
-The skill preserves cue count, order, and timestamps. It translates English
-segments to Chinese, lightly corrects Chinese segments, and keeps domain terms
-or names in English when that is clearer.
+Recommended parameter combinations for different scenarios:
+
+| Use Case | Recommended Parameters | Notes |
+| --- | --- | --- |
+| Quick validation | `--model small --device cpu --compute-type int8 --limit-seconds 45` | For testing download, audio extraction, and SRT output. |
+| Daily full transcription | `--model medium --device cpu --compute-type int8` | Current CLI default. Faster than `large-v3` with acceptable quality. |
+| High-quality Chinese podcast | `--model large-v3 --device cpu --compute-type int8 --beam-size 1 --initial-prompt "<names terms>"` | Tested high-quality setup for this machine. Slower than `medium`, but better quality and handles long audio well. |
+| Maximum quality | `--model large-v3 --device cpu --compute-type int8` | Uses default `--beam-size 5`; slower than `beam-size 1`, but wider search space. |
+
+`large-v3` is usually more accurate for long audio and Chinese scenarios than `small` and `medium`, but it's also slower. `--compute-type int8` reduces CPU memory usage and runtime. `--initial-prompt` is very helpful for recognizing names, company names, and technical terms—recommend listing these keywords before formal transcription.
 
 ## Output Files
 
-By default, each run creates a readable output directory:
+By default, each episode or video is written to the `output` directory using a readable directory name:
 
 ```text
-<out-dir>/<title>__<short-id>/
+output/<title>__<short-id>/
 ```
 
-Each output directory contains:
-
-- `metadata.json`: source metadata and transcript provenance.
-- `source.srt`: source-language subtitle artifact.
-- `segments.json`: parsed segment data.
-- `audio_sample.wav` or downloaded source audio when local ASR runs.
-- `transcript.zh.srt`: final Chinese subtitle artifact, created by the agent
-  skill rather than by the CLI.
-
-New code should not create the legacy `transcript.srt` or TXT transcript files.
-
-## CLI Reference
+For example:
 
 ```text
-python -m podcast_to_text.cli <url> [options]
+output/OpenClaw 之后，我只想未来 3-6 个月的事情｜对谈 Sheet0 创始人王文锋__69b4d2f9/
 ```
 
-Common options:
+Each output directory contains (depending on the processing path):
 
-| Option | Default | Description |
+- `metadata.json` - source URL, title, platform ID, parameters, model info, and timing stats
+- `source.srt` - source subtitles converted from YouTube platform subtitles; ASR is skipped when this file exists
+- `segments.json` - Whisper segment results from ASR path
+- `transcript.srt` - SRT subtitle file generated from ASR path
+- `audio_sample.wav` - test audio generated when using `--limit-seconds` in ASR path
+- `audio.<ext>` - full downloaded original audio when not using `--limit-seconds` in ASR path
+
+## Environment Requirements
+
+- Python 3.10 or higher
+- Access to Xiaoyuzhou web pages, audio files, and YouTube video audio
+- `ffmpeg` required when using `--limit-seconds`
+- Runs on CPU, recommend `--compute-type int8`
+- For CUDA usage, local CUDA environment must be available
+
+## Installation
+
+In the project root directory:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# .venv\Scripts\activate   # Windows
+
+pip install -r requirements.txt
+pip install -e .
+```
+
+Or install with development dependencies (Windows):
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -U pip
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+```
+
+## CLI Parameters
+
+| Parameter | Default | Description |
 | --- | --- | --- |
-| `url` | required | Xiaoyuzhou episode URL or YouTube URL. |
-| `--out-dir` | `out` | Parent directory for generated artifacts. |
-| `--model` | `medium` | `faster-whisper` model name, such as `tiny`, `small`, `medium`, or `large-v3`. |
-| `--device` | `cpu` | Whisper device: `cpu`, `cuda`, or `auto`. |
-| `--compute-type` | `int8` | Whisper compute type: `int8`, `float16`, `float32`, or `default`. |
-| `--language` | `auto` | ASR language. `auto` keeps Xiaoyuzhou on Chinese and lets YouTube fallback ASR detect the source language. |
-| `--beam-size` | `5` | Whisper beam size. Smaller values can be faster; larger values can be more thorough. |
-| `--vad-filter` | off | Enable voice activity filtering in Whisper. |
-| `--initial-prompt` | none | Vocabulary or context hint for names, products, and jargon. |
-| `--dir-template` | `title-id` | Output directory naming: `title-id`, `id`, or `title`. |
-| `--limit-seconds` | none | Transcribe only the first N seconds. Useful for testing. Requires `ffmpeg`. |
+| `url` | Required | Xiaoyuzhou episode URL or YouTube URL |
+| `--out-dir` | `output` | Output root directory |
+| `--model` | `medium` | `faster-whisper` model name, e.g. `tiny`, `small`, `medium`, `large-v3` |
+| `--device` | `cpu` | Inference device, e.g. `cpu`, `cuda`, `auto` |
+| `--compute-type` | `int8` | Compute type, e.g. `int8`, `float16`, `float32` |
+| `--language` | `zh` | Transcription language; empty value lets Whisper auto-detect |
+| `--beam-size` | `5` | Whisper decoding beam size; higher values are usually slower |
+| `--vad-filter` | Disabled | Enable VAD filtering for audio with long silences |
+| `--initial-prompt` | None | Context hint for Whisper, good for names, terms, and show titles |
+| `--limit-seconds` | None | Transcribe only the first N seconds for quick testing |
+| `--dir-template` | `title-id` | Output directory name format: `title-id` for `<title>__<short-id>`, `id` for ID-only format |
 
-## Limits And Expectations
+## Supported URL Formats
 
-- The CLI processes one URL per command.
-- Supported inputs are Xiaoyuzhou episode pages and YouTube watch, short, live,
-  or `youtu.be` links.
-- Xiaoyuzhou App-only transcript data is not fetched. The supported path is
-  webpage/audio resolution plus local ASR.
-- YouTube subtitle availability depends on the video. Subtitle downloads can
-  also fail because of platform rate limits; the CLI tries the next subtitle
-  candidate and then falls back to audio ASR.
-- Local ASR quality depends on model size, audio quality, language, accents, and
-  terminology. Use `--initial-prompt` for names and domain-specific vocabulary.
-- CPU transcription can be slow, especially with larger models. Use `small` for
-  quick tests and `large-v3` when quality matters more than runtime.
-- The tool does not do speaker diarization, summarization, or article rewriting.
-- `transcript.zh.srt` is generated by the agent skill, not by the CLI.
+Xiaoyuzhou:
+
+```text
+https://www.xiaoyuzhoufm.com/episode/<24-character episode id>
+https://xiaoyuzhoufm.com/episode/<24-character episode id>
+```
+
+YouTube:
+
+```text
+https://www.youtube.com/watch?v=<video id>
+https://youtu.be/<video id>
+https://www.youtube.com/shorts/<video id>
+https://www.youtube.com/live/<video id>
+```
+
+## Running Tests
+
+After installing development dependencies:
+
+```bash
+pytest
+```
+
+## Xiaoyuzhou Transcript Hints
+
+Some Xiaoyuzhou episode pages expose transcript metadata (such as `transcriptMediaId`), but the public web page does not directly provide the transcript text. The CLI records these hints in the `platform_transcript_hint` field in `metadata.json`, but actual transcription is done through local `faster-whisper` without depending on the Xiaoyuzhou App's transcript API.
+
+## Project Structure
+
+```
+podcast-to-text/
+├── src/
+│   └── podcast_to_text/
+│       ├── cli.py              # CLI entry point
+│       ├── xiaoyuzhou.py       # Xiaoyuzhou audio parsing
+│       ├── youtube.py          # YouTube subtitle extraction and audio download
+│       ├── outputs.py          # SRT rendering and VTT to SRT conversion
+│       ├── transcriber.py      # Whisper transcription wrapper
+│       └── files.py            # Output directory naming
+├── tests/                      # Test files
+├── output/                     # Default output directory
+└── requirements.txt            # Dependencies
+```
 
 ## How It Works
 
-### Xiaoyuzhou
+```mermaid
+graph TD
+    A[Input URL] --> B{Determine platform}
+    B -->|Xiaoyuzhou| C[Parse episode audio]
+    B -->|YouTube| D{Platform subtitles available?}
 
-1. The CLI fetches the Xiaoyuzhou episode page.
-2. It extracts episode metadata and the playable audio URL from the page.
-3. It records any public transcript hints in `metadata.json`, but does not rely
-   on private App transcript APIs.
-4. It downloads the audio, or creates a short sample when `--limit-seconds` is
-   used.
-5. It runs local `faster-whisper` ASR and writes `source.srt`.
+    D -->|Yes| E[Generate source.srt]
+    D -->|No| F[Download YouTube audio]
 
-### YouTube
+    C --> G[faster-whisper local ASR]
+    F --> G
 
-1. The CLI uses `yt-dlp` to inspect the video.
-2. It tries platform subtitles before downloading audio.
-3. Subtitle priority is:
-   - manual Chinese
-   - manual English
-   - automatic Chinese
-   - automatic English
-4. Downloaded subtitles are normalized into `source.srt`.
-5. If a subtitle candidate fails to download, the CLI tries the next candidate.
-6. If no usable subtitle is available, the CLI downloads audio and runs local
-   `faster-whisper` ASR.
-
-## Chinese Adaptation Skill
-
-The skill lives at:
-
-```text
-skills/chinese-srt-adaptation/
+    E --> H[metadata.json]
+    G --> I[transcript.srt + segments.json + metadata.json]
 ```
 
-It instructs an agent to:
+**Core Flow:**
 
-- read `source.srt`;
-- create `transcript.zh.srt`;
-- translate English text to Chinese;
-- lightly correct existing Chinese text;
-- preserve cue indexes, order, and timestamps;
-- run `scripts/validate_srt_alignment.py` before marking metadata complete.
-
-Run the validator directly when needed:
-
-```powershell
-python skills/chinese-srt-adaptation/scripts/validate_srt_alignment.py `
-  path\to\source.srt `
-  path\to\transcript.zh.srt
-```
-
-## License
-
-This project is licensed under the MIT License. See [LICENSE](LICENSE).
+1. Xiaoyuzhou: Parses audio then uses local `faster-whisper` transcription.
+2. YouTube: Prefers platform subtitles, directly outputs `source.srt`.
+3. YouTube without usable subtitles: Falls back to audio download and local ASR.
+4. ASR path outputs `transcript.srt`, `segments.json`, and `metadata.json`.

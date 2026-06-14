@@ -14,7 +14,7 @@ def transcribe_audio(
     model_name: str,
     device: str,
     compute_type: str,
-    language: str | None,
+    language: str,
     beam_size: int,
     vad_filter: bool,
     initial_prompt: str | None = None,

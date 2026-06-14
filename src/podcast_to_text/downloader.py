@@ -40,4 +40,3 @@ def download_file(url: str, output_path: Path, timeout: int = 30) -> Path:
 def audio_extension(audio_url: str) -> str:
     suffix = Path(urlparse(audio_url).path).suffix.lower()
     return suffix if suffix else ".audio"
-

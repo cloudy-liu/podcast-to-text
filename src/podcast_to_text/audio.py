@@ -27,4 +27,3 @@ def extract_audio_sample(audio_url: str, output_path: Path, seconds: float) -> P
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "ffmpeg failed to extract audio sample")
     return output_path
-

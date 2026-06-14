@@ -40,6 +40,17 @@ class YouTubeSubtitle:
     uploader: str | None = None
 
 
+@dataclass(frozen=True)
+class _SubtitleSelection:
+    language: str
+    subtitle_type: str
+
+
+CHINESE_SUBTITLE_LANGUAGES = ("zh-Hans", "zh-CN", "zh", "zh-Hant", "zh-TW")
+ENGLISH_SUBTITLE_LANGUAGES = ("en", "en-US", "en-GB")
+SUPPORTED_SUBTITLE_EXTENSIONS = {"vtt"}
+
+
 def is_youtube_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
@@ -90,67 +101,43 @@ def download_youtube_audio(source_url: str, output_dir: Path) -> YouTubeVideo:
 
 def download_youtube_subtitle(source_url: str, output_dir: Path) -> YouTubeSubtitle | None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    probe_options: dict[str, Any] = {
-        "skip_download": True,
-        "noplaylist": True,
-        "quiet": True,
-        "no_warnings": True,
-    }
-
-    with YoutubeDL(probe_options) as ydl:
-        info = ydl.extract_info(source_url, download=False)
-
-    for language, subtitle_type in _subtitle_candidates(info):
-        try:
-            return _download_youtube_subtitle_candidate(
-                source_url=source_url,
-                output_dir=output_dir,
-                info=info,
-                language=language,
-                subtitle_type=subtitle_type,
-            )
-        except Exception:
-            continue
-
-    return None
-
-
-def _download_youtube_subtitle_candidate(
-    *,
-    source_url: str,
-    output_dir: Path,
-    info: dict[str, Any],
-    language: str,
-    subtitle_type: str,
-) -> YouTubeSubtitle:
     output_template = str(output_dir / "%(title).120s [%(id)s].%(ext)s")
-    download_options: dict[str, Any] = {
-        "skip_download": True,
-        "writesubtitles": subtitle_type == "manual",
-        "writeautomaticsub": subtitle_type == "automatic",
-        "subtitleslangs": [language],
-        "subtitlesformat": "srt/vtt/best",
-        "outtmpl": output_template,
-        "noplaylist": True,
-        "quiet": False,
-        "no_warnings": False,
-    }
 
-    with YoutubeDL(download_options) as ydl:
-        downloaded_info = ydl.extract_info(source_url, download=True)
+    with YoutubeDL(_youtube_subtitle_probe_options()) as ydl:
+        probe_info = ydl.extract_info(source_url, download=False)
 
-    subtitle_path = _downloaded_subtitle_path(downloaded_info, output_dir, language)
-    metadata = downloaded_info if isinstance(downloaded_info, dict) else info
+    selection = _select_subtitle(probe_info)
+    if selection is None:
+        return None
+
+    with YoutubeDL(_youtube_subtitle_download_options(output_template, selection)) as ydl:
+        info = ydl.extract_info(source_url, download=True)
+
+    video_id = str(info.get("id") or probe_info.get("id") or "")
+    title = str(info.get("title") or probe_info.get("title") or video_id or "youtube-video")
+    subtitle_path = _downloaded_subtitle_path(
+        info=info,
+        output_dir=output_dir,
+        title=title,
+        video_id=video_id,
+        language=selection.language,
+    )
+
     return YouTubeSubtitle(
-        video_id=str(metadata.get("id") or ""),
-        title=str(metadata.get("title") or metadata.get("id") or "youtube-video"),
+        video_id=video_id,
+        title=title,
         source_url=source_url,
-        webpage_url=str(metadata.get("webpage_url") or source_url),
+        webpage_url=str(info.get("webpage_url") or probe_info.get("webpage_url") or source_url),
         subtitle_path=subtitle_path,
-        language=language,
-        subtitle_type=subtitle_type,
-        duration=_float_or_none(metadata.get("duration")),
-        uploader=_string_or_none(metadata.get("uploader") or metadata.get("channel")),
+        language=selection.language,
+        subtitle_type=selection.subtitle_type,
+        duration=_float_or_none(info.get("duration") or probe_info.get("duration")),
+        uploader=_string_or_none(
+            info.get("uploader")
+            or info.get("channel")
+            or probe_info.get("uploader")
+            or probe_info.get("channel")
+        ),
     )
 
 
@@ -168,101 +155,105 @@ def _downloaded_audio_path(info: dict[str, Any]) -> Path:
     raise RuntimeError("yt-dlp did not report a downloaded audio file path.")
 
 
-def _select_subtitle(info: dict[str, Any]) -> tuple[str, str] | None:
-    candidates = _subtitle_candidates(info)
-    return candidates[0] if candidates else None
+def _youtube_subtitle_probe_options() -> dict[str, Any]:
+    return {
+        "skip_download": True,
+        "noplaylist": True,
+        "quiet": False,
+        "no_warnings": False,
+    }
 
 
-def _subtitle_candidates(info: dict[str, Any]) -> list[tuple[str, str]]:
+def _youtube_subtitle_download_options(
+    output_template: str, selection: _SubtitleSelection
+) -> dict[str, Any]:
+    return {
+        "skip_download": True,
+        "outtmpl": output_template,
+        "noplaylist": True,
+        "quiet": False,
+        "no_warnings": False,
+        "writesubtitles": selection.subtitle_type == "manual",
+        "writeautomaticsub": selection.subtitle_type == "automatic",
+        "subtitleslangs": [selection.language],
+        "subtitlesformat": "vtt",
+    }
+
+
+def _select_subtitle(info: dict[str, Any]) -> _SubtitleSelection | None:
     manual_subtitles = _as_dict(info.get("subtitles"))
-    automatic_subtitles = _as_dict(info.get("automatic_captions"))
-    candidates: list[tuple[str, str]] = []
+    automatic_captions = _as_dict(info.get("automatic_captions"))
 
-    for captions, subtitle_type, language_family in (
-        (manual_subtitles, "manual", "zh"),
-        (manual_subtitles, "manual", "en"),
-        (automatic_subtitles, "automatic", "zh"),
-        (automatic_subtitles, "automatic", "en"),
+    for languages, subtitle_type, subtitles in (
+        (CHINESE_SUBTITLE_LANGUAGES, "manual", manual_subtitles),
+        (ENGLISH_SUBTITLE_LANGUAGES, "manual", manual_subtitles),
+        (CHINESE_SUBTITLE_LANGUAGES, "automatic", automatic_captions),
+        (ENGLISH_SUBTITLE_LANGUAGES, "automatic", automatic_captions),
     ):
-        for language in _select_languages(captions, language_family):
-            candidates.append((language, subtitle_type))
+        language = _find_supported_subtitle_language(subtitles, languages)
+        if language is not None:
+            return _SubtitleSelection(language=language, subtitle_type=subtitle_type)
 
-    return candidates
-
-
-def _select_language(captions: dict[str, Any], language_family: str) -> str | None:
-    languages = _select_languages(captions, language_family)
-    return languages[0] if languages else None
+    return None
 
 
-def _select_languages(captions: dict[str, Any], language_family: str) -> list[str]:
-    preferred = (
-        _CHINESE_LANGUAGE_PRIORITY
-        if language_family == "zh"
-        else _ENGLISH_LANGUAGE_PRIORITY
-    )
-    available = [
-        language for language in captions if _has_downloadable_caption(captions[language])
-    ]
+def _find_supported_subtitle_language(
+    subtitles: dict[str, Any], preferred_languages: tuple[str, ...]
+) -> str | None:
+    for language in preferred_languages:
+        if _has_supported_subtitle(subtitles.get(language)):
+            return language
 
-    selected: list[str] = []
-    for language in preferred:
-        if language in available:
-            selected.append(language)
+    for language in subtitles:
+        if language.startswith(preferred_languages) and _has_supported_subtitle(
+            subtitles.get(language)
+        ):
+            return language
 
-    selected.extend(
-        language
-        for language in sorted(
-            language for language in available if _language_matches(language, language_family)
-        )
-        if language not in selected
-    )
-    return selected
+    return None
 
 
-def _has_downloadable_caption(entries: Any) -> bool:
-    if not isinstance(entries, list):
-        return False
-    if not entries:
-        return False
-    return any(
-        not isinstance(entry, dict) or entry.get("ext") in {None, "srt", "vtt"}
-        for entry in entries
-    )
+def _has_supported_subtitle(value: Any) -> bool:
+    for subtitle in _as_list(value):
+        if (
+            isinstance(subtitle, dict)
+            and subtitle.get("ext") in SUPPORTED_SUBTITLE_EXTENSIONS
+        ):
+            return True
+    return False
 
 
-def _language_matches(language: str, language_family: str) -> bool:
-    normalized = language.lower()
-    if language_family == "zh":
-        return normalized == "zh" or normalized.startswith("zh-")
-    return normalized == "en" or normalized.startswith("en-")
-
-
-def _downloaded_subtitle_path(info: dict[str, Any], output_dir: Path, language: str) -> Path:
+def _downloaded_subtitle_path(
+    *,
+    info: dict[str, Any],
+    output_dir: Path,
+    title: str,
+    video_id: str,
+    language: str,
+) -> Path:
     requested_subtitles = _as_dict(info.get("requested_subtitles"))
-    subtitle_info = _as_dict(requested_subtitles.get(language))
-    for key in ("filepath", "filename"):
-        filepath = subtitle_info.get(key)
-        if isinstance(filepath, str) and filepath:
-            return Path(filepath)
+    for subtitle in requested_subtitles.values():
+        if isinstance(subtitle, dict):
+            filepath = subtitle.get("filepath")
+            if isinstance(filepath, str) and filepath:
+                return Path(filepath)
 
-    matching_paths = sorted(
-        path
-        for path in output_dir.iterdir()
-        if path.is_file() and f".{language}." in path.name
-    )
-    if matching_paths:
-        return matching_paths[-1]
+    for subtitle_path in output_dir.glob("*.vtt"):
+        if (
+            subtitle_path.name.endswith(f".{language}.vtt")
+            and f"[{video_id}]" in subtitle_path.name
+        ):
+            return subtitle_path
 
-    raise RuntimeError("yt-dlp did not report a downloaded subtitle file path.")
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
+    return output_dir / f"{title} [{video_id}].{language}.vtt"
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
 
 
 def _float_or_none(value: Any) -> float | None:
@@ -273,14 +264,3 @@ def _float_or_none(value: Any) -> float | None:
 
 def _string_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) and value.strip() else None
-
-
-_CHINESE_LANGUAGE_PRIORITY = (
-    "zh-Hans",
-    "zh-CN",
-    "zh",
-    "zh-Hant",
-    "zh-TW",
-    "zh-HK",
-)
-_ENGLISH_LANGUAGE_PRIORITY = ("en", "en-US", "en-GB")

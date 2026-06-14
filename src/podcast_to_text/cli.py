@@ -2,35 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
 from pathlib import Path
 
 from .audio import extract_audio_sample
 from .downloader import audio_extension, download_file, fetch_text
 from .files import episode_directory_name
-from .outputs import (
-    Segment,
-    normalize_subtitle_to_srt,
-    parse_subtitle_segments,
-    render_srt,
-)
+from .outputs import render_srt, render_vtt_as_srt
 from .transcriber import segments_to_jsonable, transcribe_audio
 from .xiaoyuzhou import is_xiaoyuzhou_episode_url, resolve_xiaoyuzhou_from_html
-from .youtube import (
-    YouTubeSubtitle,
-    download_youtube_audio,
-    download_youtube_subtitle,
-    is_youtube_url,
-)
-
-
-@dataclass(frozen=True)
-class PreparedInput:
-    episode_dir: Path
-    metadata: dict[str, object]
-    audio_path: Path | None = None
-    source_srt_path: Path | None = None
-    source_segments: list[Segment] | None = None
+from .youtube import download_youtube_audio, download_youtube_subtitle, is_youtube_url
 
 
 def main() -> int:
@@ -38,90 +18,45 @@ def main() -> int:
         description="Transcribe a Xiaoyuzhou episode or YouTube video link locally."
     )
     parser.add_argument("url", help="Xiaoyuzhou episode URL or YouTube URL")
-    parser.add_argument("--out-dir", default="out", type=Path)
-    parser.add_argument(
-        "--model",
-        default="medium",
-        help="faster-whisper model, e.g. tiny, small, medium, large-v3",
-    )
+    parser.add_argument("--out-dir", default="output", type=Path)
+    parser.add_argument("--model", default="medium", help="faster-whisper model, e.g. tiny, small, medium, large-v3")
     parser.add_argument("--device", default="cpu", help="cpu, cuda, or auto")
-    parser.add_argument(
-        "--compute-type",
-        default="int8",
-        help="int8, float16, float32, or default",
-    )
-    parser.add_argument(
-        "--language",
-        default="auto",
-        help=(
-            "ASR language code. Use auto to keep Xiaoyuzhou on zh and let "
-            "YouTube audio fallback detect the source language."
-        ),
-    )
+    parser.add_argument("--compute-type", default="int8", help="int8, float16, float32, or default")
+    parser.add_argument("--language", default="zh")
     parser.add_argument("--beam-size", default=5, type=int)
     parser.add_argument("--vad-filter", action="store_true")
-    parser.add_argument(
-        "--initial-prompt",
-        help="Vocabulary or context hint for Whisper, such as names and jargon",
-    )
+    parser.add_argument("--initial-prompt", help="Vocabulary or context hint for Whisper, such as names and jargon")
     parser.add_argument(
         "--dir-template",
         default="title-id",
         choices=["title-id", "id", "title"],
         help="Output episode/video directory naming: title-id, id, or title",
     )
-    parser.add_argument(
-        "--limit-seconds",
-        type=float,
-        help="Only transcribe the first N seconds for testing",
-    )
+    parser.add_argument("--limit-seconds", type=float, help="Only transcribe the first N seconds for testing")
     args = parser.parse_args()
 
-    prepared = _prepare_input(args)
-    episode_dir = prepared.episode_dir
-    metadata = prepared.metadata
+    episode_dir, metadata, audio_path = _prepare_input(args)
 
-    if prepared.source_srt_path is not None:
-        source_srt_path = prepared.source_srt_path
-        segments = prepared.source_segments or []
+    if audio_path is None:
         (episode_dir / "metadata.json").write_text(
             json.dumps(metadata, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        (episode_dir / "segments.json").write_text(
-            json.dumps(segments_to_jsonable(segments), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        print(
-            json.dumps(
-                {
-                    "output_dir": str(episode_dir),
-                    "source_srt_path": str(source_srt_path),
-                    **metadata,
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        print(json.dumps({"output_dir": str(episode_dir), **metadata}, ensure_ascii=False, indent=2))
         return 0
 
-    if prepared.audio_path is None:
-        raise RuntimeError("No audio or source subtitle was prepared.")
-
     segments, transcribe_metadata = transcribe_audio(
-        prepared.audio_path,
+        audio_path,
         model_name=args.model,
         device=args.device,
         compute_type=args.compute_type,
-        language=_transcription_language(args, metadata),
+        language=args.language,
         beam_size=args.beam_size,
         vad_filter=args.vad_filter,
         initial_prompt=args.initial_prompt,
     )
     metadata["transcription"] = transcribe_metadata
-    metadata["audio_path"] = str(prepared.audio_path)
-    metadata["source_transcript"] = _local_asr_source_transcript(transcribe_metadata)
-    metadata["chinese_transcript"] = _pending_chinese_transcript()
+    metadata["audio_path"] = str(audio_path)
 
     (episode_dir / "metadata.json").write_text(
         json.dumps(metadata, ensure_ascii=False, indent=2),
@@ -131,24 +66,13 @@ def main() -> int:
         json.dumps(segments_to_jsonable(segments), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    source_srt_path = episode_dir / "source.srt"
-    source_srt_path.write_text(render_srt(segments), encoding="utf-8")
+    (episode_dir / "transcript.srt").write_text(render_srt(segments), encoding="utf-8")
 
-    print(
-        json.dumps(
-            {
-                "output_dir": str(episode_dir),
-                "source_srt_path": str(source_srt_path),
-                **metadata,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
+    print(json.dumps({"output_dir": str(episode_dir), **metadata}, ensure_ascii=False, indent=2))
     return 0
 
 
-def _prepare_input(args: argparse.Namespace) -> PreparedInput:
+def _prepare_input(args: argparse.Namespace) -> tuple[Path, dict[str, object], Path | None]:
     if is_xiaoyuzhou_episode_url(args.url):
         return _prepare_xiaoyuzhou_input(args)
 
@@ -158,34 +82,7 @@ def _prepare_input(args: argparse.Namespace) -> PreparedInput:
     raise SystemExit("Only Xiaoyuzhou episode URLs and YouTube URLs are supported.")
 
 
-def _transcription_language(args: argparse.Namespace, metadata: dict[str, object]) -> str | None:
-    if args.language not in {None, "", "auto"}:
-        return args.language
-
-    if metadata.get("source_type") == "xiaoyuzhou":
-        return "zh"
-
-    return None
-
-
-def _local_asr_source_transcript(transcribe_metadata: dict[str, object]) -> dict[str, object]:
-    return {
-        "artifact": "source.srt",
-        "method": "local_asr",
-        "provider": "faster_whisper",
-        "asr_used": True,
-        "language": transcribe_metadata.get("language"),
-    }
-
-
-def _pending_chinese_transcript() -> dict[str, object]:
-    return {
-        "artifact": "transcript.zh.srt",
-        "status": "pending",
-    }
-
-
-def _prepare_xiaoyuzhou_input(args: argparse.Namespace) -> PreparedInput:
+def _prepare_xiaoyuzhou_input(args: argparse.Namespace) -> tuple[Path, dict[str, object], Path]:
     page_html = fetch_text(args.url)
     episode = resolve_xiaoyuzhou_from_html(args.url, page_html)
     episode_dir = args.out_dir / episode_directory_name(
@@ -213,18 +110,13 @@ def _prepare_xiaoyuzhou_input(args: argparse.Namespace) -> PreparedInput:
         audio_path = episode_dir / f"audio{audio_extension(episode.audio_url)}"
         download_file(episode.audio_url, audio_path)
 
-    return PreparedInput(episode_dir=episode_dir, metadata=metadata, audio_path=audio_path)
+    return episode_dir, metadata, audio_path
 
 
-def _prepare_youtube_input(args: argparse.Namespace) -> PreparedInput:
+def _prepare_youtube_input(args: argparse.Namespace) -> tuple[Path, dict[str, object], Path | None]:
     staging_dir = args.out_dir / ".youtube-downloads"
     staging_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        subtitle = download_youtube_subtitle(args.url, staging_dir)
-    except Exception:
-        subtitle = None
-
+    subtitle = download_youtube_subtitle(args.url, staging_dir)
     if subtitle is not None:
         video_dir = args.out_dir / episode_directory_name(
             title=subtitle.title,
@@ -232,15 +124,34 @@ def _prepare_youtube_input(args: argparse.Namespace) -> PreparedInput:
             template=args.dir_template,
         )
         video_dir.mkdir(parents=True, exist_ok=True)
-        source_srt_path, source_segments = _write_platform_source_srt(subtitle, video_dir)
+        source_srt_path = video_dir / "source.srt"
+        source_srt_path.write_text(
+            render_vtt_as_srt(subtitle.subtitle_path.read_text(encoding="utf-8")),
+            encoding="utf-8",
+        )
         _delete_if_exists(subtitle.subtitle_path)
         _delete_dir_if_empty(staging_dir)
-        return PreparedInput(
-            episode_dir=video_dir,
-            metadata=_youtube_subtitle_metadata(args, subtitle),
-            source_srt_path=source_srt_path,
-            source_segments=source_segments,
-        )
+
+        metadata: dict[str, object] = {
+            "source_type": "youtube",
+            "source_url": subtitle.source_url,
+            "video_id": subtitle.video_id,
+            "title": subtitle.title,
+            "webpage_url": subtitle.webpage_url,
+            "duration": subtitle.duration,
+            "uploader": subtitle.uploader,
+            "limit_seconds": args.limit_seconds,
+            "initial_prompt": args.initial_prompt,
+            "source_transcript": {
+                "artifact": "source.srt",
+                "method": "platform_subtitle",
+                "provider": "youtube",
+                "asr_used": False,
+                "language": subtitle.language,
+                "subtitle_type": subtitle.subtitle_type,
+            },
+        }
+        return video_dir, metadata, None
 
     video = download_youtube_audio(args.url, staging_dir)
     video_dir = args.out_dir / episode_directory_name(
@@ -272,42 +183,7 @@ def _prepare_youtube_input(args: argparse.Namespace) -> PreparedInput:
             video.audio_path.replace(audio_path)
 
     _delete_dir_if_empty(staging_dir)
-    return PreparedInput(episode_dir=video_dir, metadata=metadata, audio_path=audio_path)
-
-
-def _write_platform_source_srt(
-    subtitle: YouTubeSubtitle, video_dir: Path
-) -> tuple[Path, list[Segment]]:
-    raw_subtitle = subtitle.subtitle_path.read_text(encoding="utf-8")
-    source_segments = parse_subtitle_segments(raw_subtitle)
-    source_srt_path = video_dir / "source.srt"
-    source_srt_path.write_text(normalize_subtitle_to_srt(raw_subtitle), encoding="utf-8")
-    return source_srt_path, source_segments
-
-
-def _youtube_subtitle_metadata(
-    args: argparse.Namespace, subtitle: YouTubeSubtitle
-) -> dict[str, object]:
-    return {
-        "source_type": "youtube",
-        "source_url": subtitle.source_url,
-        "video_id": subtitle.video_id,
-        "title": subtitle.title,
-        "webpage_url": subtitle.webpage_url,
-        "duration": subtitle.duration,
-        "uploader": subtitle.uploader,
-        "limit_seconds": args.limit_seconds,
-        "initial_prompt": args.initial_prompt,
-        "source_transcript": {
-            "artifact": "source.srt",
-            "method": "platform_subtitle",
-            "provider": "youtube",
-            "asr_used": False,
-            "language": subtitle.language,
-            "subtitle_type": subtitle.subtitle_type,
-        },
-        "chinese_transcript": _pending_chinese_transcript(),
-    }
+    return video_dir, metadata, audio_path
 
 
 def _delete_if_exists(path: Path) -> None:
