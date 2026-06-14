@@ -1,6 +1,6 @@
 # Podcast To Text
 
-[中文](README-zh.md)
+[中文](README.md)
 
 Local Xiaoyuzhou podcast transcription and YouTube subtitle extraction using `faster-whisper`.
 

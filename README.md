@@ -1,6 +1,6 @@
 # Podcast To Text
 
-[English](README.md)
+[English](README-en.md)
 
 使用 `faster-whisper` 本地转写小宇宙播客，并优先提取 YouTube 平台字幕。
 
