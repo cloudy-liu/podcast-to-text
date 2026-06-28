@@ -5,7 +5,7 @@ description: Use when an AI coding agent needs to transcribe, calibrate transcri
 
 # Podcast To Text
 
-Use this repository as a portable agent skill for turning Xiaoyuzhou or YouTube source links into lightweight local Chinese transcript assets. The Python CLI is a bundled runtime under `scripts/`, not the repository's primary surface.
+Use this repository as a portable agent skill for turning Xiaoyuzhou or YouTube source links into lightweight local Chinese transcript assets. The Python CLI is a bundled runtime under `scripts/`; the README remains the human-facing project introduction.
 
 ## Required Context
 
@@ -52,4 +52,4 @@ python scripts/validate_result.py output/result --allow-partial
 - Historical transcript artifacts are important local assets. Do not delete them unless they are proven duplicate/redundant; preserve or ask when unsure.
 - Keep `output/result/` local and small. It is ignored by git by default and should not be pushed unless the user explicitly asks to publish or export result artifacts.
 - Treat `source.srt` without `transcript.zh.srt` as partial success, not completion.
-- Keep the root directory skill-first. Put executable Python runtime code, dependencies, and tests under `scripts/`.
+- Keep the root directory lightweight. Put executable Python runtime code, dependencies, and tests under `scripts/`.

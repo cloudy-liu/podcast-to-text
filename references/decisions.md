@@ -1,14 +1,14 @@
 # Decisions
 
-## 0001 Portable Agent Skill Is The Primary Surface
+## 0001 README Remains The Project Introduction
 
 Status: accepted
 
-The repository is structured as a portable agent skill project. Claude Code, Codex, Cursor, opencode, and similar agent runtimes can consume the root `SKILL.md`, `references/`, `scripts/`, and optional `agents/` metadata. Python packaging, tests, and the executable CLI live under `scripts/`.
+The README remains the human-facing project introduction and manual CLI guide. The repository also exposes a portable agent skill through `SKILL.md`, `references/`, `scripts/`, and optional `agents/` metadata so Claude Code, Codex, Cursor, opencode, and similar agent runtimes can run the fuller Chinese transcript workflow. Python packaging, tests, and the executable CLI live under `scripts/`.
 
-Rejected alternative: keep a normal Python CLI project at the root and add `SKILL.md` as a wrapper. That makes users see the project as a CLI first, which conflicts with the intended skill-first distribution model.
+Rejected alternative: replace the README with skill-only instructions. That makes the GitHub project page confusing for users who only want the CLI.
 
-Consequence: users who clone the repository can still run the CLI manually by entering `scripts/` or calling `python scripts/run_cli.py`, but the skill instructions remain the main interface.
+Consequence: users who clone the repository can run the CLI manually with `python scripts/run_cli.py`; agents can read `SKILL.md` for the higher-level workflow.
 
 ## 0002 CLI Owns Acquisition And ASR Only
 
