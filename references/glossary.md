@@ -2,7 +2,7 @@
 
 ## Skill Project
 
-The repository shape consumed by Claude Code, Codex, Cursor, opencode, or another AI coding agent as a skill: `SKILL.md`, `references/`, `scripts/`, and optional `agents/` metadata. The root is not a Python application surface.
+The repository shape consumed by Claude Code, Codex, Cursor, opencode, or another AI coding agent as a skill: `SKILL.md`, `references/`, `scripts/`, and optional `agents/` metadata. The README remains the human-facing project introduction; the Python runtime lives under `scripts/`.
 
 ## Bundled CLI Runtime
 
