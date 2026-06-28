@@ -22,7 +22,7 @@ def transcribe_audio(
     try:
         from faster_whisper import WhisperModel
     except ImportError as exc:
-        raise RuntimeError("faster-whisper is not installed. Run pip install -r requirements.txt") from exc
+        raise RuntimeError("faster-whisper is not installed. Run pip install -r scripts/requirements.txt") from exc
 
     started = time.perf_counter()
     model = WhisperModel(model_name, device=device, compute_type=compute_type)

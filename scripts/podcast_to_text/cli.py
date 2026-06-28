@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .audio import extract_audio_sample
+from .calibration import build_asr_calibration_prompt, describe_transcription_calibration
 from .downloader import audio_extension, download_file, fetch_text
 from .files import episode_directory_name
 from .outputs import render_srt, render_vtt_as_srt
@@ -13,12 +14,16 @@ from .xiaoyuzhou import is_xiaoyuzhou_episode_url, resolve_xiaoyuzhou_from_html
 from .youtube import download_youtube_audio, download_youtube_subtitle, is_youtube_url
 
 
+SKILL_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_OUTPUT_DIR = SKILL_ROOT / "output"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Transcribe a Xiaoyuzhou episode or YouTube video link locally."
     )
     parser.add_argument("url", help="Xiaoyuzhou episode URL or YouTube URL")
-    parser.add_argument("--out-dir", default="output", type=Path)
+    parser.add_argument("--out-dir", default=DEFAULT_OUTPUT_DIR, type=Path)
     parser.add_argument("--model", default="medium", help="faster-whisper model, e.g. tiny, small, medium, large-v3")
     parser.add_argument("--device", default="cpu", help="cpu, cuda, or auto")
     parser.add_argument("--compute-type", default="int8", help="int8, float16, float32, or default")
@@ -45,6 +50,12 @@ def main() -> int:
         print(json.dumps({"output_dir": str(episode_dir), **metadata}, ensure_ascii=False, indent=2))
         return 0
 
+    calibration_prompt = build_asr_calibration_prompt(metadata, args.initial_prompt)
+    if calibration_prompt:
+        metadata["transcription_calibration"] = describe_transcription_calibration(
+            calibration_prompt
+        )
+
     segments, transcribe_metadata = transcribe_audio(
         audio_path,
         model_name=args.model,
@@ -53,9 +64,16 @@ def main() -> int:
         language=args.language,
         beam_size=args.beam_size,
         vad_filter=args.vad_filter,
-        initial_prompt=args.initial_prompt,
+        initial_prompt=calibration_prompt,
     )
     metadata["transcription"] = transcribe_metadata
+    metadata["source_transcript"] = {
+        "artifact": "source.srt",
+        "method": "local_asr",
+        "provider": "faster-whisper",
+        "asr_used": True,
+        "language": transcribe_metadata.get("language"),
+    }
     metadata["audio_path"] = str(audio_path)
 
     (episode_dir / "metadata.json").write_text(
@@ -66,7 +84,7 @@ def main() -> int:
         json.dumps(segments_to_jsonable(segments), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    (episode_dir / "transcript.srt").write_text(render_srt(segments), encoding="utf-8")
+    (episode_dir / "source.srt").write_text(render_srt(segments), encoding="utf-8")
 
     print(json.dumps({"output_dir": str(episode_dir), **metadata}, ensure_ascii=False, indent=2))
     return 0
