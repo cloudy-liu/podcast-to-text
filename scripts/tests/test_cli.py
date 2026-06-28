@@ -19,7 +19,7 @@ def _stub_transcriber(monkeypatch):
         "transcribe_audio",
         lambda *args, **kwargs: (
             [Segment(start=0.0, end=1.0, text="hello world")],
-            {"model": "tiny", "duration": 1.0, "segments": 1},
+            {"model": "tiny", "duration": 1.0, "segments": 1, "language": "en"},
         ),
     )
 
@@ -107,12 +107,14 @@ def test_cli_uses_readable_title_id_directory_by_default(monkeypatch, tmp_path):
 
 def test_cli_uses_output_directory_when_out_dir_is_omitted(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
+    default_output_dir = tmp_path / "skill-output"
+    monkeypatch.setattr(cli, "DEFAULT_OUTPUT_DIR", default_output_dir)
     _run_cli(monkeypatch, tmp_path, include_out_dir=False)
     _stub_xiaoyuzhou(monkeypatch)
 
     assert cli.main() == 0
 
-    assert (tmp_path / "output" / "Episode Title- Harness__6a15a2cb").is_dir()
+    assert (default_output_dir / "Episode Title- Harness__6a15a2cb").is_dir()
 
 
 def test_cli_can_use_legacy_episode_id_directory(monkeypatch, tmp_path):
@@ -142,14 +144,71 @@ def test_cli_writes_platform_transcript_hint_to_metadata(monkeypatch, tmp_path):
     }
 
 
-def test_cli_writes_srt_but_not_txt_for_xiaoyuzhou(monkeypatch, tmp_path):
+def test_cli_passes_source_metadata_as_asr_calibration_prompt(monkeypatch, tmp_path):
+    out_dir = _run_cli(monkeypatch, tmp_path)
+    _stub_xiaoyuzhou(monkeypatch)
+    captured = {}
+
+    def fake_transcribe_audio(audio_path, **kwargs):
+        captured.update(kwargs)
+        return (
+            [Segment(start=0.0, end=1.0, text="hello world")],
+            {"model": "tiny", "duration": 1.0, "segments": 1, "language": "en"},
+        )
+
+    monkeypatch.setattr(cli, "transcribe_audio", fake_transcribe_audio)
+
+    assert cli.main() == 0
+
+    prompt = captured["initial_prompt"]
+    assert "Source type: xiaoyuzhou" in prompt
+    assert "Title: Episode Title: Harness" in prompt
+    assert "Source id: 6a15a2cbff7b9a8c0a5b953f" in prompt
+
+    metadata_path = out_dir / "Episode Title- Harness__6a15a2cb" / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["transcription_calibration"] == {
+        "artifact": "metadata.json",
+        "method": "source_metadata_prompt",
+        "used_for_asr": True,
+        "prompt": prompt,
+    }
+
+
+def test_cli_combines_user_prompt_with_source_metadata_calibration(monkeypatch, tmp_path):
+    _run_cli(
+        monkeypatch,
+        tmp_path,
+        extra_args=["--initial-prompt", "User terms: Harness, Stanley Druckenmiller"],
+    )
+    _stub_xiaoyuzhou(monkeypatch)
+    captured = {}
+
+    def fake_transcribe_audio(audio_path, **kwargs):
+        captured.update(kwargs)
+        return (
+            [Segment(start=0.0, end=1.0, text="hello world")],
+            {"model": "tiny", "duration": 1.0, "segments": 1, "language": "en"},
+        )
+
+    monkeypatch.setattr(cli, "transcribe_audio", fake_transcribe_audio)
+
+    assert cli.main() == 0
+
+    prompt = captured["initial_prompt"]
+    assert prompt.startswith("User hint: User terms: Harness, Stanley Druckenmiller")
+    assert "Title: Episode Title: Harness" in prompt
+
+
+def test_cli_writes_source_srt_but_not_legacy_transcript_for_xiaoyuzhou(monkeypatch, tmp_path):
     out_dir = _run_cli(monkeypatch, tmp_path)
     _stub_xiaoyuzhou(monkeypatch)
 
     assert cli.main() == 0
 
     episode_dir = out_dir / "Episode Title- Harness__6a15a2cb"
-    assert (episode_dir / "transcript.srt").is_file()
+    assert (episode_dir / "source.srt").is_file()
+    assert not (episode_dir / "transcript.srt").exists()
     assert not (episode_dir / "transcript.txt").exists()
 
 
@@ -163,11 +222,22 @@ def test_cli_supports_youtube_urls(monkeypatch, tmp_path):
     metadata = json.loads((video_dir / "metadata.json").read_text(encoding="utf-8"))
 
     assert video_dir.is_dir()
-    assert (video_dir / "transcript.srt").is_file()
+    assert (video_dir / "source.srt").is_file()
+    assert not (video_dir / "transcript.srt").exists()
     assert (video_dir / "segments.json").is_file()
     assert not (video_dir / "transcript.txt").exists()
     assert metadata["source_type"] == "youtube"
     assert metadata["video_id"] == "dQw4w9WgXcQ"
+    assert metadata["source_transcript"] == {
+        "artifact": "source.srt",
+        "method": "local_asr",
+        "provider": "faster-whisper",
+        "asr_used": True,
+        "language": "en",
+    }
+    assert metadata["transcription_calibration"]["used_for_asr"] is True
+    assert "Title: YouTube Demo: Video" in metadata["transcription_calibration"]["prompt"]
+    assert "Channel: Example Channel" in metadata["transcription_calibration"]["prompt"]
 
 
 def test_cli_uses_youtube_platform_subtitle_before_asr(monkeypatch, tmp_path):

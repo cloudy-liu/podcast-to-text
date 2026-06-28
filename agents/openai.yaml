@@ -1,0 +1,4 @@
+interface:
+  display_name: "Podcast To Text"
+  short_description: "Turn podcast or YouTube links into Chinese SRT and Chinese insights."
+  default_prompt: "Use $podcast-to-text to calibrate and transcribe this Xiaoyuzhou or YouTube link into local Chinese SRT and Chinese insights."

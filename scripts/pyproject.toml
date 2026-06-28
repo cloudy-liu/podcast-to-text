@@ -5,8 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "podcast-to-text"
 version = "0.1.0"
-description = "Generate local subtitles from Xiaoyuzhou audio and YouTube subtitles or ASR."
-readme = "README.md"
+description = "Bundled CLI runtime for the podcast-to-text skill."
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
@@ -26,7 +25,8 @@ dev = [
 podcast-to-text = "podcast_to_text.cli:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["."]
+testpaths = ["tests"]
