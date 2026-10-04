@@ -39,3 +39,16 @@ Status: accepted
 Use Xiaoyuzhou and YouTube metadata to calibrate transcription and downstream Chinese adaptation. For local ASR, transform metadata into a concise prompt containing useful recognition hints such as source type, title, uploader/channel, source id, and user-provided vocabulary. Do not pass raw metadata JSON to ASR.
 
 Consequence: `metadata.json` records `transcription_calibration` when local ASR uses the calibration prompt. The agent reads full metadata for Chinese adaptation and insight extraction.
+
+## 0006 GPU Acceleration And Windows CUDA Runtime Handling
+
+Status: accepted
+
+On hosts with NVIDIA GPUs (e.g. GTX 1650 4GB), local ASR should leverage CUDA acceleration (`--device cuda --compute-type float16`) with lightweight models (`base` or `small`) and `--vad-filter` to achieve ~15-20x realtime processing speeds, avoiding 30-60+ minute CPU transcription stalls.
+
+On Windows, CTranslate2 requires CUDA 12 runtime dynamic libraries (`cublas64_12.dll`, `cudnn64_9.dll`). To avoid requiring a full manual installation of the system-wide NVIDIA CUDA Toolkit:
+1. Provide wheels `nvidia-cublas-cu12` and `nvidia-cudnn-cu12` in Python requirements.
+2. In `scripts/podcast_to_text/transcriber.py`, dynamically register `.venv/Lib/site-packages/nvidia/*/bin` into Windows DLL search directories using `os.add_dll_directory()` before loading `faster_whisper`.
+
+Consequence: CUDA GPU transcription works reliably out of the box on Windows environments without manual driver or PATH reconfiguration.
+
