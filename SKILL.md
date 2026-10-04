@@ -21,7 +21,11 @@ Read these references as needed:
 1. Run the bundled CLI through `scripts/run_cli.py`. Do not reimplement Xiaoyuzhou parsing, YouTube extraction, or local ASR outside `scripts/podcast_to_text/`.
 
 ```bash
+# Standard CPU run (fallback default):
 python scripts/run_cli.py "<source-link>"
+
+# Recommended GPU run (when NVIDIA GPU is available, e.g. GTX 1650 4GB, ~15-20x realtime):
+python scripts/run_cli.py "<source-link>" --device cuda --compute-type float16 --model base --vad-filter
 ```
 
 2. Use source metadata for transcription calibration. The CLI converts Xiaoyuzhou/YouTube metadata into a short ASR prompt and records it in `metadata.json`; do not pass raw metadata JSON directly into ASR.
@@ -53,3 +57,5 @@ python scripts/validate_result.py output/result --allow-partial
 - Keep `output/result/` local and small. It is ignored by git by default and should not be pushed unless the user explicitly asks to publish or export result artifacts.
 - Treat `source.srt` without `transcript.zh.srt` as partial success, not completion.
 - Keep the root directory lightweight. Put executable Python runtime code, dependencies, and tests under `scripts/`.
+- **GPU Acceleration & CUDA DLLs**: When NVIDIA hardware is available, favor `--device cuda --compute-type float16` over CPU to prevent long execution stalls. On Windows, CUDA 12 runtime dependencies (`cublas64_12.dll`, `cudnn`) reside in `.venv/Lib/site-packages/nvidia/*/bin` and are registered dynamically in `scripts/podcast_to_text/transcriber.py` via `os.add_dll_directory()`.
+

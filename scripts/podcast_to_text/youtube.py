@@ -50,6 +50,33 @@ CHINESE_SUBTITLE_LANGUAGES = ("zh-Hans", "zh-CN", "zh", "zh-Hant", "zh-TW")
 ENGLISH_SUBTITLE_LANGUAGES = ("en", "en-US", "en-GB")
 SUPPORTED_SUBTITLE_EXTENSIONS = {"vtt"}
 
+# Bypass YouTube bot checks without browser cookies when possible.
+YOUTUBE_YT_DLP_BASE_OPTIONS: dict[str, Any] = {
+    "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+}
+
+
+def _youtube_audio_format() -> str:
+    return "18/best[height<=480]/bestaudio/best"
+
+
+def _with_youtube_options(options: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(YOUTUBE_YT_DLP_BASE_OPTIONS)
+    for key, value in options.items():
+        if key == "extractor_args" and isinstance(value, dict):
+            youtube_args = dict(merged.get("extractor_args", {}))
+            for client, client_args in value.items():
+                if client == "youtube" and isinstance(client_args, dict):
+                    existing = dict(youtube_args.get("youtube", {}))
+                    existing.update(client_args)
+                    youtube_args["youtube"] = existing
+                else:
+                    youtube_args[client] = client_args
+            merged["extractor_args"] = youtube_args
+        else:
+            merged[key] = value
+    return merged
+
 
 def is_youtube_url(url: str) -> bool:
     try:
@@ -76,13 +103,15 @@ def is_youtube_url(url: str) -> bool:
 def download_youtube_audio(source_url: str, output_dir: Path) -> YouTubeVideo:
     output_dir.mkdir(parents=True, exist_ok=True)
     output_template = str(output_dir / "%(title).120s [%(id)s].%(ext)s")
-    options: dict[str, Any] = {
-        "format": "bestaudio/best",
-        "outtmpl": output_template,
-        "noplaylist": True,
-        "quiet": False,
-        "no_warnings": False,
-    }
+    options: dict[str, Any] = _with_youtube_options(
+        {
+            "format": _youtube_audio_format(),
+            "outtmpl": output_template,
+            "noplaylist": True,
+            "quiet": False,
+            "no_warnings": False,
+        }
+    )
 
     with YoutubeDL(options) as ydl:
         info = ydl.extract_info(source_url, download=True)
@@ -103,14 +132,16 @@ def download_youtube_subtitle(source_url: str, output_dir: Path) -> YouTubeSubti
     output_dir.mkdir(parents=True, exist_ok=True)
     output_template = str(output_dir / "%(title).120s [%(id)s].%(ext)s")
 
-    with YoutubeDL(_youtube_subtitle_probe_options()) as ydl:
+    with YoutubeDL(_with_youtube_options(_youtube_subtitle_probe_options())) as ydl:
         probe_info = ydl.extract_info(source_url, download=False)
 
     selection = _select_subtitle(probe_info)
     if selection is None:
         return None
 
-    with YoutubeDL(_youtube_subtitle_download_options(output_template, selection)) as ydl:
+    with YoutubeDL(
+        _with_youtube_options(_youtube_subtitle_download_options(output_template, selection))
+    ) as ydl:
         info = ydl.extract_info(source_url, download=True)
 
     video_id = str(info.get("id") or probe_info.get("id") or "")

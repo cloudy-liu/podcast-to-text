@@ -19,6 +19,19 @@ def transcribe_audio(
     vad_filter: bool,
     initial_prompt: str | None = None,
 ) -> tuple[list[Segment], dict[str, Any]]:
+    import os
+    import sys
+
+    site = Path(sys.prefix) / "Lib" / "site-packages" / "nvidia"
+    if site.exists():
+        for d in site.glob("*/bin"):
+            if d.is_dir():
+                try:
+                    os.add_dll_directory(str(d))
+                except Exception:
+                    pass
+                os.environ["PATH"] = str(d) + ";" + os.environ.get("PATH", "")
+
     try:
         from faster_whisper import WhisperModel
     except ImportError as exc:
